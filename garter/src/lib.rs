@@ -18,3 +18,5 @@ mod error_tests;
 mod sip003_tests;
 #[cfg(test)]
 mod plugin_tests;
+#[cfg(test)]
+mod shutdown_tests;
