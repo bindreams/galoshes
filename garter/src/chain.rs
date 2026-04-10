@@ -13,9 +13,16 @@ const MAX_PORT_RETRIES: usize = 3;
 /// Allocate `count` unique ephemeral ports on localhost.
 pub fn allocate_ports(count: usize) -> crate::Result<Vec<SocketAddr>> {
     let mut ports = Vec::with_capacity(count);
+    let mut seen = std::collections::HashSet::with_capacity(count);
     for _ in 0..count {
-        let addr = allocate_one_port()?;
-        ports.push(addr);
+        loop {
+            let addr = allocate_one_port()?;
+            if seen.insert(addr.port()) {
+                ports.push(addr);
+                break;
+            }
+            tracing::debug!(port = addr.port(), "duplicate port, retrying");
+        }
     }
     Ok(ports)
 }
@@ -99,7 +106,7 @@ impl ChainRunner {
         shutdown::register_signal_handler(shutdown.clone());
 
         // Spawn all plugins
-        let mut handles = Vec::with_capacity(n);
+        let mut set = tokio::task::JoinSet::new();
         for (i, plugin) in self.plugins.into_iter().enumerate() {
             let local = addrs[i];
             let remote = addrs[i + 1];
@@ -107,51 +114,51 @@ impl ChainRunner {
             let plugin_name = plugin.name().to_string();
 
             let span = tracing::info_span!("plugin", name = %plugin_name, position = i);
-            let handle =
-                tokio::spawn(async move { plugin.run(local, remote, token).await }.instrument(span));
-            handles.push((plugin_name, handle));
+            set.spawn(async move {
+                let result = plugin.run(local, remote, token).instrument(span).await;
+                (plugin_name, result)
+            });
         }
 
         // Wait for plugins to exit. Any exit (clean or error) in a multi-plugin
         // chain means data can no longer flow, so trigger shutdown for all others.
-        let mut set = tokio::task::JoinSet::new();
-        for (name, handle) in handles {
-            set.spawn(async move { (name, handle.await) });
-        }
-
-        let mut first_error: Option<crate::Error> = None;
-        while let Some(result) = set.join_next().await {
-            match result {
-                Ok((name, Ok(Ok(())))) => {
-                    tracing::info!(plugin = %name, "exited cleanly");
-                    shutdown.cancel();
-                }
-                Ok((name, Ok(Err(e)))) => {
-                    tracing::error!(plugin = %name, error = %e, "exited with error");
-                    if first_error.is_none() {
-                        first_error = Some(e);
+        // The drain timeout bounds how long we wait for remaining plugins after
+        // shutdown is first triggered.
+        let wait_result = tokio::time::timeout(self.drain_timeout, async {
+            let mut first_error: Option<crate::Error> = None;
+            while let Some(result) = set.join_next().await {
+                match result {
+                    Ok((name, Ok(()))) => {
+                        tracing::info!(plugin = %name, "exited cleanly");
+                        shutdown.cancel();
                     }
-                    shutdown.cancel();
-                }
-                Ok((name, Err(join_err))) => {
-                    tracing::error!(plugin = %name, error = %join_err, "task panicked");
-                    if first_error.is_none() {
-                        first_error = Some(crate::Error::Chain(format!(
-                            "plugin '{name}' panicked: {join_err}"
-                        )));
+                    Ok((name, Err(e))) => {
+                        tracing::error!(plugin = %name, error = %e, "exited with error");
+                        if first_error.is_none() {
+                            first_error = Some(e);
+                        }
+                        shutdown.cancel();
                     }
-                    shutdown.cancel();
-                }
-                Err(join_err) => {
-                    tracing::error!(error = %join_err, "plugin task failed to join");
-                    shutdown.cancel();
+                    Err(join_err) => {
+                        tracing::error!(error = %join_err, "plugin task panicked");
+                        if first_error.is_none() {
+                            first_error = Some(crate::Error::Chain(format!("plugin panicked: {join_err}")));
+                        }
+                        shutdown.cancel();
+                    }
                 }
             }
-        }
+            first_error
+        }).await;
 
-        match first_error {
-            Some(e) => Err(e),
-            None => Ok(()),
+        match wait_result {
+            Ok(Some(e)) => Err(e),
+            Ok(None) => Ok(()),
+            Err(_timeout) => {
+                tracing::warn!("drain timeout expired, aborting remaining plugins");
+                set.abort_all();
+                Err(crate::Error::Chain("drain timeout expired".into()))
+            }
         }
     }
 }
