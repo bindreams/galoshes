@@ -14,6 +14,12 @@ async-trait = { workspace = true }
 
 [dev-dependencies]
 serial_test = "3"
+skuld = { git = "https://github.com/bindreams/skuld" }
+
+[[test]]
+name = "chain_integration"
+path = "tests/chain_integration.rs"
+harness = false
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
