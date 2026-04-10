@@ -17,3 +17,6 @@ futures = "0.3"
 yamux = "0.13"
 sha2 = "0.10"
 tempfile = "3"
+
+[build-dependencies]
+sha2 = "0.10"
