@@ -22,3 +22,5 @@ mod plugin_tests;
 mod shutdown_tests;
 #[cfg(test)]
 mod binary_tests;
+#[cfg(test)]
+mod chain_tests;
