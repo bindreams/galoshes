@@ -309,6 +309,7 @@ dependencies = [
  "contracts",
  "garter",
  "sha2",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
