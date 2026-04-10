@@ -20,3 +20,5 @@ mod sip003_tests;
 mod plugin_tests;
 #[cfg(test)]
 mod shutdown_tests;
+#[cfg(test)]
+mod binary_tests;

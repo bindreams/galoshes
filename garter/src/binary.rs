@@ -1,1 +1,117 @@
-pub struct BinaryPlugin;
+use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::Command;
+use tokio_util::sync::CancellationToken;
+
+use crate::plugin::ChainPlugin;
+use crate::shutdown;
+
+/// A plugin backed by an external SIP003u binary.
+pub struct BinaryPlugin {
+    path: PathBuf,
+    options: Option<String>,
+    name: String,
+}
+
+impl BinaryPlugin {
+    pub fn new(path: impl Into<PathBuf>, options: Option<&str>) -> Self {
+        let path = path.into();
+        let name = extract_name(&path);
+        Self {
+            path,
+            options: options.map(String::from),
+            name,
+        }
+    }
+}
+
+fn extract_name(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown")
+        .to_string()
+}
+
+#[async_trait::async_trait]
+impl ChainPlugin for BinaryPlugin {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    async fn run(
+        self: Box<Self>,
+        local: SocketAddr,
+        remote: SocketAddr,
+        shutdown: CancellationToken,
+    ) -> crate::Result<()> {
+        let mut cmd = Command::new(&self.path);
+        cmd.env("SS_LOCAL_HOST", local.ip().to_string());
+        cmd.env("SS_LOCAL_PORT", local.port().to_string());
+        cmd.env("SS_REMOTE_HOST", remote.ip().to_string());
+        cmd.env("SS_REMOTE_PORT", remote.port().to_string());
+        if let Some(ref opts) = self.options {
+            cmd.env("SS_PLUGIN_OPTIONS", opts);
+        }
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+
+        let mut child = cmd.spawn().map_err(|e| {
+            crate::Error::Chain(format!("failed to spawn '{}': {e}", self.path.display()))
+        })?;
+
+        // Capture stdout
+        let stdout = child.stdout.take().expect("stdout was piped");
+        let plugin_name = self.name.clone();
+        let stdout_task = tokio::spawn(async move {
+            let reader = BufReader::new(stdout);
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                tracing::info!(plugin = %plugin_name, "{line}");
+            }
+        });
+
+        // Capture stderr
+        let stderr = child.stderr.take().expect("stderr was piped");
+        let plugin_name = self.name.clone();
+        let stderr_task = tokio::spawn(async move {
+            let reader = BufReader::new(stderr);
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                tracing::warn!(plugin = %plugin_name, "{line}");
+            }
+        });
+
+        // Wait for child exit or shutdown signal
+        let drain_timeout = std::time::Duration::from_secs(5);
+        tokio::select! {
+            status = child.wait() => {
+                let status = status?;
+                stdout_task.abort();
+                stderr_task.abort();
+                if status.success() {
+                    Ok(())
+                } else {
+                    match status.code() {
+                        Some(code) => Err(crate::Error::PluginExit {
+                            name: self.name.clone(),
+                            code,
+                        }),
+                        None => Err(crate::Error::PluginKilled {
+                            name: self.name.clone(),
+                        }),
+                    }
+                }
+            }
+            _ = shutdown.cancelled() => {
+                tracing::info!(plugin = %self.name, "shutting down");
+                shutdown::graceful_kill(&mut child, drain_timeout).await?;
+                stdout_task.abort();
+                stderr_task.abort();
+                Ok(())
+            }
+        }
+    }
+}
