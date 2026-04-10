@@ -66,6 +66,10 @@ jobs:
             arch: amd64
             runner: windows-latest
             target: x86_64-pc-windows-msvc
+          - os: windows
+            arch: arm64
+            runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
 
     runs-on: ${{ matrix.runner }}
 
