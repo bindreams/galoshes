@@ -8,6 +8,7 @@ fn binary_plugin_name_from_path() {
 }
 
 #[test]
+#[cfg(windows)]
 fn binary_plugin_name_from_windows_path() {
     let plugin = BinaryPlugin::new(r"C:\plugins\v2ray-plugin.exe", None);
     assert_eq!(plugin.name(), "v2ray-plugin");
