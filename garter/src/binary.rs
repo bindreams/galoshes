@@ -68,8 +68,15 @@ impl ChainPlugin for BinaryPlugin {
         let stdout_task = tokio::spawn(async move {
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                tracing::info!(plugin = %plugin_name, "{line}");
+            loop {
+                match lines.next_line().await {
+                    Ok(Some(line)) => { tracing::info!(plugin = %plugin_name, "{line}"); }
+                    Ok(None) => break, // EOF
+                    Err(e) => {
+                        tracing::debug!(plugin = %plugin_name, "log reader error: {e}");
+                        break;
+                    }
+                }
             }
         });
 
@@ -79,8 +86,15 @@ impl ChainPlugin for BinaryPlugin {
         let stderr_task = tokio::spawn(async move {
             let reader = BufReader::new(stderr);
             let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                tracing::warn!(plugin = %plugin_name, "{line}");
+            loop {
+                match lines.next_line().await {
+                    Ok(Some(line)) => { tracing::warn!(plugin = %plugin_name, "{line}"); }
+                    Ok(None) => break, // EOF
+                    Err(e) => {
+                        tracing::debug!(plugin = %plugin_name, "log reader error: {e}");
+                        break;
+                    }
+                }
             }
         });
 
@@ -89,8 +103,11 @@ impl ChainPlugin for BinaryPlugin {
         tokio::select! {
             status = child.wait() => {
                 let status = status?;
-                stdout_task.abort();
-                stderr_task.abort();
+                // Drain remaining log lines (tasks will EOF when child's pipes close)
+                let _ = tokio::time::timeout(
+                    std::time::Duration::from_millis(100),
+                    async { let _ = tokio::join!(stdout_task, stderr_task); }
+                ).await;
                 if status.success() {
                     Ok(())
                 } else {
@@ -108,8 +125,11 @@ impl ChainPlugin for BinaryPlugin {
             _ = shutdown.cancelled() => {
                 tracing::info!(plugin = %self.name, "shutting down");
                 shutdown::graceful_kill(&mut child, drain_timeout).await?;
-                stdout_task.abort();
-                stderr_task.abort();
+                // Drain remaining log lines (tasks will EOF when child's pipes close)
+                let _ = tokio::time::timeout(
+                    std::time::Duration::from_millis(100),
+                    async { let _ = tokio::join!(stdout_task, stderr_task); }
+                ).await;
                 Ok(())
             }
         }
