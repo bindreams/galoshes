@@ -12,10 +12,12 @@ fn io_error_converts() {
 fn plugin_exit_error_displays_name_and_code() {
     let err = Error::PluginExit {
         name: "v2ray-plugin".into(),
-        code: 1,
+        code: 42,
     };
-    assert!(err.to_string().contains("v2ray-plugin"));
-    assert!(err.to_string().contains("1"));
+    assert_eq!(
+        err.to_string(),
+        "plugin 'v2ray-plugin' exited with code 42"
+    );
 }
 
 #[test]
@@ -23,11 +25,23 @@ fn plugin_killed_error_displays_name() {
     let err = Error::PluginKilled {
         name: "yamux".into(),
     };
-    assert!(err.to_string().contains("yamux"));
+    assert_eq!(err.to_string(), "plugin 'yamux' was killed by signal");
 }
 
 #[test]
 fn chain_error_displays_message() {
     let err = Error::Chain("port allocation failed".into());
-    assert!(err.to_string().contains("port allocation failed"));
+    assert_eq!(err.to_string(), "port allocation failed");
+}
+
+#[test]
+fn env_error_displays_var_and_reason() {
+    let err = Error::Env {
+        var: "SS_LOCAL_PORT".into(),
+        reason: "not set".into(),
+    };
+    assert_eq!(
+        err.to_string(),
+        "environment variable 'SS_LOCAL_PORT' missing or invalid: not set"
+    );
 }
