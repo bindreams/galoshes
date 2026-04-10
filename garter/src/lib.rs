@@ -13,3 +13,5 @@ pub use sip003::PluginEnv;
 
 #[cfg(test)]
 mod error_tests;
+#[cfg(test)]
+mod sip003_tests;
