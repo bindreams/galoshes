@@ -16,3 +16,5 @@ pub use sip003::parse_plugin_options;
 mod error_tests;
 #[cfg(test)]
 mod sip003_tests;
+#[cfg(test)]
+mod plugin_tests;
