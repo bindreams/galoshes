@@ -47,10 +47,13 @@ pub async fn graceful_kill(child: &mut Child, timeout: Duration) -> crate::Resul
 #[cfg(unix)]
 fn send_term_signal(child: &Child) -> crate::Result<()> {
     if let Some(pid) = child.id() {
-        // SAFETY: We are sending SIGTERM to a process we own. The pid is valid because
-        // we just obtained it from the child handle.
-        unsafe {
-            libc::kill(pid as libc::pid_t, libc::SIGTERM);
+        let ret = unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };
+        if ret == -1 {
+            let err = std::io::Error::last_os_error();
+            // ESRCH: process already exited — not an error
+            if err.raw_os_error() != Some(libc::ESRCH) {
+                return Err(err.into());
+            }
         }
     }
     Ok(())
