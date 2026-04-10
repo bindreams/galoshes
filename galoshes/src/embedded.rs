@@ -39,8 +39,7 @@ impl EmbeddedBinary {
 
     /// Extract to a specific directory (useful for testing).
     pub fn prepare_in(&self, dir: &Path) -> Result<VerifiedBinary> {
-        fs::create_dir_all(dir)
-            .with_context(|| format!("failed to create directory {}", dir.display()))?;
+        fs::create_dir_all(dir).with_context(|| format!("failed to create directory {}", dir.display()))?;
 
         #[cfg(unix)]
         set_dir_permissions(dir)?;
@@ -77,15 +76,11 @@ impl EmbeddedBinary {
             );
         }
 
-        let parent = target
-            .parent()
-            .context("target path has no parent directory")?;
+        let parent = target.parent().context("target path has no parent directory")?;
 
         // Write to a temporary file in the same directory (for atomic rename).
-        let mut tmp = tempfile::NamedTempFile::new_in(parent)
-            .context("failed to create temporary file")?;
-        tmp.write_all(self.data)
-            .context("failed to write embedded data")?;
+        let mut tmp = tempfile::NamedTempFile::new_in(parent).context("failed to create temporary file")?;
+        tmp.write_all(self.data).context("failed to write embedded data")?;
         tmp.flush().context("failed to flush temporary file")?;
 
         #[cfg(unix)]
@@ -141,10 +136,7 @@ fn runtime_dir() -> Result<PathBuf> {
 #[cfg(target_os = "macos")]
 fn runtime_dir() -> Result<PathBuf> {
     if let Ok(home) = std::env::var("HOME") {
-        Ok(PathBuf::from(home)
-            .join("Library")
-            .join("Caches")
-            .join("galoshes"))
+        Ok(PathBuf::from(home).join("Library").join("Caches").join("galoshes"))
     } else {
         Ok(std::env::temp_dir().join("galoshes"))
     }

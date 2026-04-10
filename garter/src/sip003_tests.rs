@@ -1,4 +1,4 @@
-use crate::sip003::{PluginEnv, parse_plugin_options};
+use crate::sip003::{parse_plugin_options, PluginEnv};
 
 #[test]
 #[serial_test::serial]
@@ -55,20 +55,26 @@ fn parse_env_no_plugin_options() {
 #[test]
 fn parse_plugin_options_basic() {
     let opts = parse_plugin_options("tls;host=example.com;mode=websocket");
-    assert_eq!(opts, vec![
-        ("tls".to_string(), "".to_string()),
-        ("host".to_string(), "example.com".to_string()),
-        ("mode".to_string(), "websocket".to_string()),
-    ]);
+    assert_eq!(
+        opts,
+        vec![
+            ("tls".to_string(), "".to_string()),
+            ("host".to_string(), "example.com".to_string()),
+            ("mode".to_string(), "websocket".to_string()),
+        ]
+    );
 }
 
 #[test]
 fn parse_plugin_options_escaped() {
     let opts = parse_plugin_options(r"path=/a\;b;key=val\\ue");
-    assert_eq!(opts, vec![
-        ("path".to_string(), "/a;b".to_string()),
-        ("key".to_string(), r"val\ue".to_string()),
-    ]);
+    assert_eq!(
+        opts,
+        vec![
+            ("path".to_string(), "/a;b".to_string()),
+            ("key".to_string(), r"val\ue".to_string()),
+        ]
+    );
 }
 
 #[test]
@@ -98,15 +104,11 @@ fn plugin_env_local_addr() {
 #[test]
 fn parse_plugin_options_escaped_equals_in_key() {
     let opts = parse_plugin_options(r"k\=ey=value");
-    assert_eq!(opts, vec![
-        ("k=ey".to_string(), "value".to_string()),
-    ]);
+    assert_eq!(opts, vec![("k=ey".to_string(), "value".to_string()),]);
 }
 
 #[test]
 fn parse_plugin_options_equals_in_value() {
     let opts = parse_plugin_options("key=a=b");
-    assert_eq!(opts, vec![
-        ("key".to_string(), "a=b".to_string()),
-    ]);
+    assert_eq!(opts, vec![("key".to_string(), "a=b".to_string()),]);
 }

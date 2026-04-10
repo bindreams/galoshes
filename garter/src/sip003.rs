@@ -1,5 +1,5 @@
-use std::net::{IpAddr, SocketAddr};
 use crate::error::Error;
+use std::net::{IpAddr, SocketAddr};
 
 /// Parsed SIP003u environment variables.
 #[derive(Debug, Clone)]

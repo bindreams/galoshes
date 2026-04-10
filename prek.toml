@@ -12,6 +12,7 @@ name = "no stray #[test] attribute"
 entry = '^\s*#\[test\]'
 language = "pygrep"
 types = ["rust"]
+exclude = '(_tests\.rs|/tests/)'
 
 [[repos.hooks]]
 id = "cargo-fmt"
@@ -36,7 +37,7 @@ repo = "https://github.com/pre-commit/pre-commit-hooks"
 rev = "v5.0.0"
 hooks = [
   { id = "check-executables-have-shebangs" },
-  { id = "check-shebang-scripts-are-executable" },
+  { id = "check-shebang-scripts-are-executable", exclude_types = ["rust"] },
   { id = "mixed-line-ending", args = ["--fix=lf"] },
 ]
 

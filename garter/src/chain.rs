@@ -56,6 +56,12 @@ pub struct ChainRunner {
     drain_timeout: Duration,
 }
 
+impl Default for ChainRunner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ChainRunner {
     pub fn new() -> Self {
         Self {
@@ -83,16 +89,10 @@ impl ChainRunner {
         let n = self.plugins.len();
 
         // Resolve remote address
-        let remote_addr: SocketAddr =
-            tokio::net::lookup_host(format!("{}:{}", env.remote_host, env.remote_port))
-                .await?
-                .next()
-                .ok_or_else(|| {
-                    crate::Error::Chain(format!(
-                        "failed to resolve {}:{}",
-                        env.remote_host, env.remote_port
-                    ))
-                })?;
+        let remote_addr: SocketAddr = tokio::net::lookup_host(format!("{}:{}", env.remote_host, env.remote_port))
+            .await?
+            .next()
+            .ok_or_else(|| crate::Error::Chain(format!("failed to resolve {}:{}", env.remote_host, env.remote_port)))?;
 
         // Build address chain: [local, intermediate..., remote]
         let intermediate = allocate_ports(n.saturating_sub(1))?;
@@ -149,7 +149,8 @@ impl ChainRunner {
                 }
             }
             first_error
-        }).await;
+        })
+        .await;
 
         match wait_result {
             Ok(Some(e)) => Err(e),

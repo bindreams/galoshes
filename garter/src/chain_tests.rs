@@ -18,10 +18,7 @@ fn allocate_one_port() {
     let ports = allocate_ports(1).unwrap();
     assert_eq!(ports.len(), 1);
     assert!(ports[0].port() > 0);
-    assert_eq!(
-        ports[0].ip(),
-        "127.0.0.1".parse::<std::net::IpAddr>().unwrap()
-    );
+    assert_eq!(ports[0].ip(), "127.0.0.1".parse::<std::net::IpAddr>().unwrap());
 }
 
 #[test]
@@ -56,8 +53,7 @@ impl ChainPlugin for InstantPlugin {
 
 #[tokio::test]
 async fn chain_runner_single_plugin() {
-    let runner =
-        ChainRunner::new().add(Box::new(InstantPlugin { name: "test".into() }));
+    let runner = ChainRunner::new().add(Box::new(InstantPlugin { name: "test".into() }));
 
     let env = crate::sip003::PluginEnv {
         local_host: "127.0.0.1".parse().unwrap(),

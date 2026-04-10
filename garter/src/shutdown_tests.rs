@@ -31,10 +31,7 @@ async fn graceful_kill_terminates_child() {
         .await
         .unwrap();
     let status = child.try_wait().unwrap();
-    assert!(
-        status.is_some(),
-        "child should have exited after graceful_kill"
-    );
+    assert!(status.is_some(), "child should have exited after graceful_kill");
 }
 
 #[tokio::test]

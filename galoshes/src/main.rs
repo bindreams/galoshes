@@ -1,3 +1,5 @@
+#![cfg_attr(v2ray_plugin_missing, allow(dead_code, unused_imports))]
+
 mod embedded;
 mod yamux;
 
@@ -16,23 +18,17 @@ const V2RAY_BYTES: &[u8] = b"";
 #[cfg(v2ray_plugin_missing)]
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    anyhow::bail!(
-        "galoshes was compiled without v2ray-plugin. Run `cargo xtask v2ray-plugin` and rebuild."
-    );
+    anyhow::bail!("galoshes was compiled without v2ray-plugin. Run `cargo xtask v2ray-plugin` and rebuild.");
 }
 
 #[cfg(not(v2ray_plugin_missing))]
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
-        )
+        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
 
-    let env = PluginEnv::from_env()
-        .map_err(|e| anyhow::anyhow!("failed to parse SIP003u environment: {e}"))?;
+    let env = PluginEnv::from_env().map_err(|e| anyhow::anyhow!("failed to parse SIP003u environment: {e}"))?;
 
     // Parse SHA256 from build-time env
     let sha256 = {
@@ -52,14 +48,9 @@ async fn main() -> anyhow::Result<()> {
 
     let verified = v2ray_binary.prepare()?;
 
-    let yamux_plugin = yamux::YamuxPlugin::from_plugin_options(
-        env.plugin_options.as_deref(),
-    );
+    let yamux_plugin = yamux::YamuxPlugin::from_plugin_options(env.plugin_options.as_deref());
 
-    let v2ray_plugin = BinaryPlugin::new(
-        verified.exec_path(),
-        env.plugin_options.as_deref(),
-    );
+    let v2ray_plugin = BinaryPlugin::new(verified.exec_path(), env.plugin_options.as_deref());
 
     let runner = ChainRunner::new()
         .add(Box::new(yamux_plugin))

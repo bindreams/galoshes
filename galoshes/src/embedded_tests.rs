@@ -47,6 +47,12 @@ fn hash_mismatch_re_extracts() {
     let v1 = binary.prepare_in(dir.path()).unwrap();
     let fs_path = v1.fs_path().to_path_buf();
     drop(v1);
+    // Make writable before tampering (file was extracted with 0o500 on Unix)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&fs_path, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
     std::fs::write(&fs_path, b"tampered content").unwrap();
     let v2 = binary.prepare_in(dir.path()).unwrap();
     let content = std::fs::read(v2.fs_path()).unwrap();

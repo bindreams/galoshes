@@ -17,11 +17,7 @@ fn mock_plugin_path() -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.pop(); // garter/ -> workspace root
     path.push("target");
-    path.push(if cfg!(debug_assertions) {
-        "debug"
-    } else {
-        "release"
-    });
+    path.push(if cfg!(debug_assertions) { "debug" } else { "release" });
     path.push(if cfg!(windows) {
         "mock-plugin.exe"
     } else {

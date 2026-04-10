@@ -33,7 +33,10 @@ impl StreamTag {
 
 /// Frame a UDP datagram with a 2-byte big-endian length prefix.
 pub fn frame_udp_datagram(payload: &[u8]) -> Vec<u8> {
-    debug_assert!(payload.len() <= u16::MAX as usize, "UDP datagram too large for 2-byte length prefix");
+    debug_assert!(
+        payload.len() <= u16::MAX as usize,
+        "UDP datagram too large for 2-byte length prefix"
+    );
     let len = payload.len() as u16;
     let mut buf = Vec::with_capacity(2 + payload.len());
     buf.extend_from_slice(&len.to_be_bytes());
@@ -142,25 +145,16 @@ async fn drive_connection<T: futures::AsyncRead + futures::AsyncWrite + Unpin + 
 }
 
 /// Request a new outbound stream from the driver.
-async fn open_stream(
-    open_tx: &mpsc::Sender<OpenStreamReply>,
-) -> Result<yamux::Stream, yamux::ConnectionError> {
+async fn open_stream(open_tx: &mpsc::Sender<OpenStreamReply>) -> Result<yamux::Stream, yamux::ConnectionError> {
     let (tx, rx) = tokio::sync::oneshot::channel();
-    open_tx
-        .send(tx)
-        .await
-        .map_err(|_| yamux::ConnectionError::Closed)?;
-    rx.await
-        .map_err(|_| yamux::ConnectionError::Closed)?
+    open_tx.send(tx).await.map_err(|_| yamux::ConnectionError::Closed)?;
+    rx.await.map_err(|_| yamux::ConnectionError::Closed)?
 }
 
 // TCP/UDP relay helpers =====
 
 /// Relay between a tokio TCP stream and a yamux stream (bidirectional).
-async fn relay_tcp(
-    mut yamux_stream: yamux::Stream,
-    mut tcp_stream: TcpStream,
-) -> Result<()> {
+async fn relay_tcp(mut yamux_stream: yamux::Stream, mut tcp_stream: TcpStream) -> Result<()> {
     // Convert yamux stream (futures AsyncRead/Write) to tokio-compatible.
     let mut compat = (&mut yamux_stream).compat();
     let (mut yr, mut yw) = tokio::io::split(&mut compat);
@@ -181,11 +175,7 @@ async fn relay_tcp(
 /// Client side: reads from a local UDP socket, frames datagrams and sends over
 /// the yamux stream; reads framed datagrams from the yamux stream and sends
 /// back to the last known peer address.
-async fn relay_udp_client(
-    mut yamux_stream: yamux::Stream,
-    udp: &UdpSocket,
-    peer: SocketAddr,
-) -> Result<()> {
+async fn relay_udp_client(mut yamux_stream: yamux::Stream, udp: &UdpSocket, peer: SocketAddr) -> Result<()> {
     let mut recv_buf = [0u8; 65536 + 2];
     let mut udp_buf = [0u8; 65536];
 
@@ -216,10 +206,7 @@ async fn relay_udp_client(
 }
 
 /// Relay UDP datagrams on the server side: yamux stream <-> remote UDP socket.
-async fn relay_udp_server(
-    mut yamux_stream: yamux::Stream,
-    remote: SocketAddr,
-) -> Result<()> {
+async fn relay_udp_server(mut yamux_stream: yamux::Stream, remote: SocketAddr) -> Result<()> {
     let udp = UdpSocket::bind("127.0.0.1:0").await.context("bind udp")?;
     udp.connect(remote).await.context("connect udp")?;
 
@@ -451,13 +438,9 @@ async fn run_server(
 async fn handle_inbound_stream(mut stream: yamux::Stream, remote: SocketAddr) -> Result<()> {
     // Read the tag byte.
     let mut tag_buf = [0u8; 1];
-    stream
-        .read_exact(&mut tag_buf)
-        .await
-        .context("read stream tag")?;
+    stream.read_exact(&mut tag_buf).await.context("read stream tag")?;
 
-    let tag = StreamTag::from_byte(tag_buf[0])
-        .context("invalid stream tag")?;
+    let tag = StreamTag::from_byte(tag_buf[0]).context("invalid stream tag")?;
 
     match tag {
         StreamTag::Tcp => {
@@ -488,9 +471,7 @@ impl YamuxPlugin {
     }
 
     pub fn from_plugin_options(options: Option<&str>) -> Self {
-        let is_server = options
-            .map(|opts| opts.contains("server"))
-            .unwrap_or(false);
+        let is_server = options.map(|opts| opts.contains("server")).unwrap_or(false);
         Self::new(is_server)
     }
 }

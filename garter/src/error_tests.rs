@@ -14,17 +14,12 @@ fn plugin_exit_error_displays_name_and_code() {
         name: "v2ray-plugin".into(),
         code: 42,
     };
-    assert_eq!(
-        err.to_string(),
-        "plugin 'v2ray-plugin' exited with code 42"
-    );
+    assert_eq!(err.to_string(), "plugin 'v2ray-plugin' exited with code 42");
 }
 
 #[test]
 fn plugin_killed_error_displays_name() {
-    let err = Error::PluginKilled {
-        name: "yamux".into(),
-    };
+    let err = Error::PluginKilled { name: "yamux".into() };
     assert_eq!(err.to_string(), "plugin 'yamux' was killed by signal");
 }
 

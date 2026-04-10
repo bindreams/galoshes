@@ -13,10 +13,7 @@ chain:
     let config: ChainConfig = yaml_serde::from_str(yaml).unwrap();
     assert_eq!(config.chain.len(), 2);
     assert_eq!(config.chain[0].plugin, Path::new("/usr/bin/v2ray-plugin"));
-    assert_eq!(
-        config.chain[0].options.as_deref(),
-        Some("tls;host=example.com")
-    );
+    assert_eq!(config.chain[0].options.as_deref(), Some("tls;host=example.com"));
     assert!(config.chain[1].options.is_none());
 }
 

@@ -20,11 +20,7 @@ impl ChainConfig {
         for entry in &mut self.chain {
             if entry.plugin.is_relative() {
                 // Strip leading "./" or ".\" so that join produces a clean path.
-                let stripped = entry
-                    .plugin
-                    .strip_prefix(".")
-                    .unwrap_or(&entry.plugin)
-                    .to_path_buf();
+                let stripped = entry.plugin.strip_prefix(".").unwrap_or(&entry.plugin).to_path_buf();
                 entry.plugin = config_dir.join(stripped);
             }
         }

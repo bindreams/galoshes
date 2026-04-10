@@ -1,4 +1,4 @@
-use crate::yamux::{StreamTag, frame_udp_datagram, deframe_udp_datagram};
+use crate::yamux::{deframe_udp_datagram, frame_udp_datagram, StreamTag};
 
 #[test]
 fn stream_tag_tcp_roundtrip() {

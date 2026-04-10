@@ -59,9 +59,9 @@ impl ChainPlugin for BinaryPlugin {
         cmd.stderr(Stdio::piped());
         cmd.kill_on_drop(true);
 
-        let mut child = cmd.spawn().map_err(|e| {
-            crate::Error::Chain(format!("failed to spawn '{}': {e}", self.path.display()))
-        })?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| crate::Error::Chain(format!("failed to spawn '{}': {e}", self.path.display())))?;
 
         // Capture stdout
         let stdout = child.stdout.take().expect("stdout was piped");
@@ -71,7 +71,9 @@ impl ChainPlugin for BinaryPlugin {
             let mut lines = reader.lines();
             loop {
                 match lines.next_line().await {
-                    Ok(Some(line)) => { tracing::info!(plugin = %plugin_name, "{line}"); }
+                    Ok(Some(line)) => {
+                        tracing::info!(plugin = %plugin_name, "{line}");
+                    }
                     Ok(None) => break, // EOF
                     Err(e) => {
                         tracing::debug!(plugin = %plugin_name, "log reader error: {e}");
@@ -89,7 +91,9 @@ impl ChainPlugin for BinaryPlugin {
             let mut lines = reader.lines();
             loop {
                 match lines.next_line().await {
-                    Ok(Some(line)) => { tracing::warn!(plugin = %plugin_name, "{line}"); }
+                    Ok(Some(line)) => {
+                        tracing::warn!(plugin = %plugin_name, "{line}");
+                    }
                     Ok(None) => break, // EOF
                     Err(e) => {
                         tracing::debug!(plugin = %plugin_name, "log reader error: {e}");

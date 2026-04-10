@@ -1,6 +1,6 @@
+use crate::plugin::ChainPlugin;
 use std::net::SocketAddr;
 use tokio_util::sync::CancellationToken;
-use crate::plugin::ChainPlugin;
 
 /// A no-op plugin that immediately returns Ok.
 struct NoopPlugin;
