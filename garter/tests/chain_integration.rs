@@ -44,11 +44,9 @@ fn two_plugin_chain_relays_data() {
         let echo_addr = echo_listener.local_addr().unwrap();
 
         let echo_task = tokio::spawn(async move {
-            if let Ok((mut stream, _)) = echo_listener.accept().await {
-                let mut buf = [0u8; 1024];
-                if let Ok(n) = stream.read(&mut buf).await {
-                    let _ = stream.write_all(&buf[..n]).await;
-                }
+            if let Ok((stream, _)) = echo_listener.accept().await {
+                let (mut reader, mut writer) = tokio::io::split(stream);
+                let _ = tokio::io::copy(&mut reader, &mut writer).await;
             }
         });
 
@@ -73,11 +71,19 @@ fn two_plugin_chain_relays_data() {
 
         let chain_task = tokio::spawn(async move { runner.run(env).await });
 
-        // Give the chain time to start
-        tokio::time::sleep(Duration::from_millis(1000)).await;
-
-        // Connect through the chain and send data
-        let mut client = TcpStream::connect(chain_local).await.unwrap();
+        // Wait for the chain to start accepting connections
+        let mut client = {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+            loop {
+                match TcpStream::connect(chain_local).await {
+                    Ok(stream) => break stream,
+                    Err(_) if tokio::time::Instant::now() < deadline => {
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                    Err(e) => panic!("chain did not start accepting within 5s: {e}"),
+                }
+            }
+        };
         client.write_all(b"hello through chain").await.unwrap();
 
         let mut buf = [0u8; 1024];
@@ -92,12 +98,13 @@ fn two_plugin_chain_relays_data() {
         drop(client);
         echo_task.abort();
 
-        // Chain should terminate (plugins exit when connections close,
-        // ChildGuard kills any stragglers)
+        // Chain plugins loop on accept() indefinitely. When the runtime is
+        // dropped (end of block_on), tasks are cancelled and kill_on_drop
+        // terminates the child processes.
         let _ = tokio::time::timeout(Duration::from_secs(10), chain_task).await;
     });
     // Runtime dropped here -- any remaining tasks cancelled,
-    // ChildGuard kills orphaned child processes
+    // kill_on_drop terminates orphaned child processes
 }
 
 fn main() {
