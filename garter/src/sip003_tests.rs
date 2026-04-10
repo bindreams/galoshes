@@ -94,3 +94,19 @@ fn plugin_env_local_addr() {
     std::env::remove_var("SS_REMOTE_HOST");
     std::env::remove_var("SS_REMOTE_PORT");
 }
+
+#[test]
+fn parse_plugin_options_escaped_equals_in_key() {
+    let opts = parse_plugin_options(r"k\=ey=value");
+    assert_eq!(opts, vec![
+        ("k=ey".to_string(), "value".to_string()),
+    ]);
+}
+
+#[test]
+fn parse_plugin_options_equals_in_value() {
+    let opts = parse_plugin_options("key=a=b");
+    assert_eq!(opts, vec![
+        ("key".to_string(), "a=b".to_string()),
+    ]);
+}

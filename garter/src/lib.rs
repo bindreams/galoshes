@@ -10,6 +10,7 @@ pub use plugin::ChainPlugin;
 pub use binary::BinaryPlugin;
 pub use chain::ChainRunner;
 pub use sip003::PluginEnv;
+pub use sip003::parse_plugin_options;
 
 #[cfg(test)]
 mod error_tests;

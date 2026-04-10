@@ -28,10 +28,17 @@ impl PluginEnv {
 }
 
 fn read_env(var: &str) -> crate::Result<String> {
-    std::env::var(var).map_err(|_| Error::Env {
-        var: var.into(),
-        reason: "not set".into(),
-    })
+    match std::env::var(var) {
+        Ok(val) => Ok(val),
+        Err(std::env::VarError::NotPresent) => Err(Error::Env {
+            var: var.into(),
+            reason: "not set".into(),
+        }),
+        Err(std::env::VarError::NotUnicode(_)) => Err(Error::Env {
+            var: var.into(),
+            reason: "contains invalid Unicode".into(),
+        }),
+    }
 }
 
 fn read_env_parsed<T: std::str::FromStr>(var: &str) -> crate::Result<T>
