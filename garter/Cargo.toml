@@ -12,9 +12,11 @@ thiserror = { workspace = true }
 contracts = { workspace = true }
 async-trait = { workspace = true }
 
+[lib]
+harness = false
+
 [dev-dependencies]
-serial_test = "3"
-skuld = { git = "https://github.com/bindreams/skuld" }
+skuld = { git = "https://github.com/bindreams/skuld", features = ["tokio"] }
 
 [[test]]
 name = "chain_integration"

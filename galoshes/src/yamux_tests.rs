@@ -1,24 +1,24 @@
 use crate::yamux::{deframe_udp_datagram, frame_udp_datagram, StreamTag};
 
-#[test]
+#[skuld::test]
 fn stream_tag_tcp_roundtrip() {
     assert_eq!(StreamTag::Tcp.to_byte(), 0x01);
     assert_eq!(StreamTag::from_byte(0x01).unwrap(), StreamTag::Tcp);
 }
 
-#[test]
+#[skuld::test]
 fn stream_tag_udp_roundtrip() {
     assert_eq!(StreamTag::Udp.to_byte(), 0x02);
     assert_eq!(StreamTag::from_byte(0x02).unwrap(), StreamTag::Udp);
 }
 
-#[test]
+#[skuld::test]
 fn stream_tag_invalid() {
     assert!(StreamTag::from_byte(0x00).is_none());
     assert!(StreamTag::from_byte(0xFF).is_none());
 }
 
-#[test]
+#[skuld::test]
 fn udp_frame_roundtrip() {
     let payload = b"hello udp";
     let framed = frame_udp_datagram(payload);
@@ -28,7 +28,7 @@ fn udp_frame_roundtrip() {
     assert!(rest.is_empty());
 }
 
-#[test]
+#[skuld::test]
 fn udp_frame_max_size() {
     let payload = vec![0xABu8; 65535];
     let framed = frame_udp_datagram(&payload);
