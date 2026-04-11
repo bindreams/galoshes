@@ -194,12 +194,14 @@ async fn on_ready_dropped_on_plugin_failure() {
 #[tokio::test]
 async fn cancel_token_triggers_graceful_shutdown() {
     let cancel = CancellationToken::new();
+    let (ready_tx, ready_rx) = oneshot::channel();
 
     let runner = ChainRunner::new()
         .add(Box::new(ListeningPlugin {
             name: "listener".into(),
         }))
-        .cancel_token(cancel.clone());
+        .cancel_token(cancel.clone())
+        .on_ready(ready_tx);
 
     let mut env = test_env();
     let addr = allocate_ports(1).unwrap().pop().unwrap();
@@ -207,8 +209,8 @@ async fn cancel_token_triggers_graceful_shutdown() {
 
     let handle = tokio::spawn(runner.run(env));
 
-    // Give the plugin time to bind.
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    // Wait for the plugin to actually bind (no sleep race).
+    ready_rx.await.expect("plugin should become ready");
 
     // Cancel externally.
     cancel.cancel();

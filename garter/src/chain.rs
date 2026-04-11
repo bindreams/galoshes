@@ -91,6 +91,10 @@ impl ChainRunner {
     /// Register a oneshot that fires when the first plugin in the chain is
     /// confirmed listening on its local address.
     ///
+    /// Readiness is detected via a TCP connect probe, which means the plugin
+    /// will briefly accept and then see a connection reset. The probe has no
+    /// overall timeout — callers should apply their own timeout on the receiver.
+    ///
     /// If the plugin exits before becoming ready, `tx` is dropped and the
     /// receiver gets `RecvError`.
     pub fn on_ready(mut self, tx: oneshot::Sender<SocketAddr>) -> Self {
@@ -128,11 +132,15 @@ impl ChainRunner {
         shutdown::register_signal_handler(shutdown.clone());
 
         // Wire external cancellation into the shared shutdown token.
+        // Selects on both tokens so the forwarder task terminates when
+        // either side fires (prevents leaking if the chain ends naturally).
         if let Some(external) = self.external_cancel {
             let shutdown = shutdown.clone();
             tokio::spawn(async move {
-                external.cancelled().await;
-                shutdown.cancel();
+                tokio::select! {
+                    () = external.cancelled() => shutdown.cancel(),
+                    () = shutdown.cancelled() => {} // chain ended naturally
+                }
             });
         }
 
@@ -210,13 +218,21 @@ impl ChainRunner {
 
 /// Poll a TCP address with exponential backoff until it accepts a connection.
 /// Returns `None` if shutdown fires before the address is ready.
+///
+/// Each connect attempt races against the shutdown token so that a
+/// cancellation during an OS-level TCP timeout is not delayed.
 async fn poll_ready(addr: SocketAddr, shutdown: CancellationToken) -> Option<SocketAddr> {
     let mut delay = Duration::from_millis(10);
     let max_delay = Duration::from_secs(1);
 
     loop {
-        if tokio::net::TcpStream::connect(addr).await.is_ok() {
-            return Some(addr);
+        tokio::select! {
+            result = tokio::net::TcpStream::connect(addr) => {
+                if result.is_ok() {
+                    return Some(addr);
+                }
+            }
+            () = shutdown.cancelled() => return None,
         }
 
         tokio::select! {
