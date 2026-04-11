@@ -4,7 +4,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::shutdown;
 
-#[tokio::test]
+#[skuld::test]
 async fn cancel_token_on_shutdown_signal() {
     let token = CancellationToken::new();
     let child_token = token.child_token();
@@ -55,7 +55,7 @@ fn spawn_signal_ignoring_sleeper() -> tokio::process::Child {
     }
 }
 
-#[tokio::test]
+#[skuld::test]
 async fn graceful_stop_terminates_child() {
     let mut child = spawn_sleeper();
     let id = child.id().expect("child should have an id");
@@ -67,7 +67,7 @@ async fn graceful_stop_terminates_child() {
     assert!(status.is_some(), "child should have exited after graceful_stop");
 }
 
-#[tokio::test]
+#[skuld::test]
 async fn graceful_stop_force_kills_after_timeout() {
     let mut child = spawn_signal_ignoring_sleeper();
 
@@ -86,7 +86,7 @@ async fn graceful_stop_force_kills_after_timeout() {
 
 /// Verify that CTRL_BREAK actually causes a prompt exit (not a timeout+force-kill).
 #[cfg(windows)]
-#[tokio::test]
+#[skuld::test]
 async fn graceful_stop_exits_via_ctrl_break() {
     let mut child = spawn_sleeper();
 

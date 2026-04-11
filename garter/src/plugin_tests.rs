@@ -21,13 +21,13 @@ impl ChainPlugin for NoopPlugin {
     }
 }
 
-#[test]
+#[skuld::test]
 fn trait_is_object_safe() {
     // This compiles only if ChainPlugin is object-safe.
     let _: Box<dyn ChainPlugin> = Box::new(NoopPlugin);
 }
 
-#[tokio::test]
+#[skuld::test]
 async fn noop_plugin_runs_and_returns() {
     let plugin: Box<dyn ChainPlugin> = Box::new(NoopPlugin);
     assert_eq!(plugin.name(), "noop");

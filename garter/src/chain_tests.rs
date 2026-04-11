@@ -8,13 +8,13 @@ use crate::plugin::ChainPlugin;
 
 // Port allocation tests =====
 
-#[test]
+#[skuld::test]
 fn allocate_zero_ports() {
     let ports = allocate_ports(0).unwrap();
     assert!(ports.is_empty());
 }
 
-#[test]
+#[skuld::test]
 fn allocate_one_port() {
     let ports = allocate_ports(1).unwrap();
     assert_eq!(ports.len(), 1);
@@ -22,7 +22,7 @@ fn allocate_one_port() {
     assert_eq!(ports[0].ip(), "127.0.0.1".parse::<std::net::IpAddr>().unwrap());
 }
 
-#[test]
+#[skuld::test]
 fn allocate_multiple_ports_are_unique() {
     let ports = allocate_ports(5).unwrap();
     assert_eq!(ports.len(), 5);
@@ -110,7 +110,7 @@ impl ChainPlugin for FailingPlugin {
 
 // ChainRunner basic tests =====
 
-#[tokio::test]
+#[skuld::test]
 async fn chain_runner_single_plugin() {
     let runner = ChainRunner::new().add(Box::new(InstantPlugin { name: "test".into() }));
     let mut env = test_env();
@@ -119,7 +119,7 @@ async fn chain_runner_single_plugin() {
     assert!(result.is_ok());
 }
 
-#[tokio::test]
+#[skuld::test]
 async fn chain_runner_multiple_plugins() {
     let runner = ChainRunner::new()
         .add(Box::new(InstantPlugin { name: "first".into() }))
@@ -134,7 +134,7 @@ async fn chain_runner_multiple_plugins() {
 
 // Readiness tests =====
 
-#[tokio::test]
+#[skuld::test]
 async fn on_ready_fires_with_local_addr() {
     let (tx, rx) = oneshot::channel();
 
@@ -163,7 +163,7 @@ async fn on_ready_fires_with_local_addr() {
     handle.abort();
 }
 
-#[tokio::test]
+#[skuld::test]
 async fn on_ready_dropped_on_plugin_failure() {
     let (tx, rx) = oneshot::channel();
 
@@ -191,7 +191,7 @@ async fn on_ready_dropped_on_plugin_failure() {
 
 // External cancellation tests =====
 
-#[tokio::test]
+#[skuld::test]
 async fn cancel_token_triggers_graceful_shutdown() {
     let cancel = CancellationToken::new();
     let (ready_tx, ready_rx) = oneshot::channel();

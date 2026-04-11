@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::config::ChainConfig;
 
-#[test]
+#[skuld::test]
 fn parse_valid_config() {
     let yaml = r#"
 chain:
@@ -17,14 +17,14 @@ chain:
     assert!(config.chain[1].options.is_none());
 }
 
-#[test]
+#[skuld::test]
 fn parse_empty_chain_is_error() {
     let yaml = "chain: []";
     let config: ChainConfig = yaml_serde::from_str(yaml).unwrap();
     assert!(config.chain.is_empty());
 }
 
-#[test]
+#[skuld::test]
 fn resolve_relative_paths() {
     let yaml = r#"
 chain:
@@ -37,7 +37,7 @@ chain:
     assert_eq!(resolved.chain[0].plugin, expected);
 }
 
-#[test]
+#[skuld::test]
 fn absolute_paths_unchanged() {
     let yaml = r#"
 chain:

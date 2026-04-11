@@ -9,7 +9,7 @@ fn test_sha256(data: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-#[test]
+#[skuld::test]
 fn cold_start_extracts_and_verifies() {
     let dir = tempfile::tempdir().unwrap();
     let binary = EmbeddedBinary {
@@ -21,7 +21,7 @@ fn cold_start_extracts_and_verifies() {
     assert!(verified.fs_path().exists());
 }
 
-#[test]
+#[skuld::test]
 fn warm_start_reuses_existing() {
     let dir = tempfile::tempdir().unwrap();
     let binary = EmbeddedBinary {
@@ -36,7 +36,7 @@ fn warm_start_reuses_existing() {
     assert_eq!(v2.fs_path(), fs_path1);
 }
 
-#[test]
+#[skuld::test]
 fn hash_mismatch_re_extracts() {
     let dir = tempfile::tempdir().unwrap();
     let binary = EmbeddedBinary {
@@ -59,7 +59,7 @@ fn hash_mismatch_re_extracts() {
     assert_eq!(content, TEST_DATA);
 }
 
-#[test]
+#[skuld::test]
 fn wrong_embedded_hash_fails() {
     let dir = tempfile::tempdir().unwrap();
     let binary = EmbeddedBinary {

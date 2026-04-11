@@ -1,8 +1,3 @@
-mod config;
-
-#[cfg(test)]
-mod config_tests;
-
 use garter::sip003::parse_plugin_options;
 use garter::{BinaryPlugin, ChainRunner, PluginEnv};
 
@@ -14,7 +9,6 @@ async fn main() -> anyhow::Result<()> {
 
     let env = PluginEnv::from_env().map_err(|e| anyhow::anyhow!("failed to parse SIP003u environment: {e}"))?;
 
-    // Extract config= from plugin options
     let config_path = env
         .plugin_options
         .as_ref()
@@ -26,7 +20,7 @@ async fn main() -> anyhow::Result<()> {
         })
         .ok_or_else(|| anyhow::anyhow!("SS_PLUGIN_OPTIONS must contain config=/path/to/chain.yaml"))?;
 
-    let cfg = config::load_config(std::path::Path::new(&config_path))?;
+    let cfg = garter_bin::config::load_config(std::path::Path::new(&config_path))?;
     anyhow::ensure!(!cfg.chain.is_empty(), "chain config must have at least one plugin");
 
     let mut runner = ChainRunner::new();

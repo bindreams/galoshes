@@ -24,3 +24,8 @@ mod plugin_tests;
 mod shutdown_tests;
 #[cfg(test)]
 mod sip003_tests;
+
+#[cfg(test)]
+fn main() {
+    skuld::run_all();
+}

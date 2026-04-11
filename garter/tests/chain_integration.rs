@@ -30,77 +30,72 @@ fn mock_plugin_path() -> PathBuf {
 /// Spin up an echo server and a chain of 2 mock plugins, send data through,
 /// verify it arrives.
 #[skuld::test]
-fn two_plugin_chain_relays_data() {
+async fn two_plugin_chain_relays_data() {
     let mock_path = mock_plugin_path();
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(async {
-        // Start an echo server as the final destination
-        let echo_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let echo_addr = echo_listener.local_addr().unwrap();
+    // Start an echo server as the final destination
+    let echo_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let echo_addr = echo_listener.local_addr().unwrap();
 
-        let echo_task = tokio::spawn(async move {
-            if let Ok((stream, _)) = echo_listener.accept().await {
-                let (mut reader, mut writer) = tokio::io::split(stream);
-                let _ = tokio::io::copy(&mut reader, &mut writer).await;
-            }
-        });
-
-        // Allocate a port for the chain's local side
-        let chain_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let chain_local = chain_listener.local_addr().unwrap();
-        drop(chain_listener);
-
-        // Build chain: mock-plugin-1 -> mock-plugin-2
-        let runner = ChainRunner::new()
-            .add(Box::new(BinaryPlugin::new(&mock_path, None)))
-            .add(Box::new(BinaryPlugin::new(&mock_path, None)))
-            .drain_timeout(Duration::from_secs(3));
-
-        let env = PluginEnv {
-            local_host: chain_local.ip(),
-            local_port: chain_local.port(),
-            remote_host: echo_addr.ip().to_string(),
-            remote_port: echo_addr.port(),
-            plugin_options: None,
-        };
-
-        let chain_task = tokio::spawn(async move { runner.run(env).await });
-
-        // Wait for the chain to start accepting connections
-        let mut client = {
-            let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-            loop {
-                match TcpStream::connect(chain_local).await {
-                    Ok(stream) => break stream,
-                    Err(_) if tokio::time::Instant::now() < deadline => {
-                        tokio::time::sleep(Duration::from_millis(50)).await;
-                    }
-                    Err(e) => panic!("chain did not start accepting within 5s: {e}"),
-                }
-            }
-        };
-        client.write_all(b"hello through chain").await.unwrap();
-
-        let mut buf = [0u8; 1024];
-        let n = tokio::time::timeout(Duration::from_secs(5), client.read(&mut buf))
-            .await
-            .expect("read timed out")
-            .unwrap();
-
-        assert_eq!(&buf[..n], b"hello through chain");
-
-        // Shut down -- drop client and abort echo server
-        drop(client);
-        echo_task.abort();
-
-        // Chain plugins loop on accept() indefinitely. When the runtime is
-        // dropped (end of block_on), tasks are cancelled and kill_on_drop
-        // terminates the child processes.
-        let _ = tokio::time::timeout(Duration::from_secs(10), chain_task).await;
+    let echo_task = tokio::spawn(async move {
+        if let Ok((stream, _)) = echo_listener.accept().await {
+            let (mut reader, mut writer) = tokio::io::split(stream);
+            let _ = tokio::io::copy(&mut reader, &mut writer).await;
+        }
     });
-    // Runtime dropped here -- any remaining tasks cancelled,
-    // kill_on_drop terminates orphaned child processes
+
+    // Allocate a port for the chain's local side
+    let chain_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let chain_local = chain_listener.local_addr().unwrap();
+    drop(chain_listener);
+
+    // Build chain: mock-plugin-1 -> mock-plugin-2
+    let runner = ChainRunner::new()
+        .add(Box::new(BinaryPlugin::new(&mock_path, None)))
+        .add(Box::new(BinaryPlugin::new(&mock_path, None)))
+        .drain_timeout(Duration::from_secs(3));
+
+    let env = PluginEnv {
+        local_host: chain_local.ip(),
+        local_port: chain_local.port(),
+        remote_host: echo_addr.ip().to_string(),
+        remote_port: echo_addr.port(),
+        plugin_options: None,
+    };
+
+    let chain_task = tokio::spawn(async move { runner.run(env).await });
+
+    // Wait for the chain to start accepting connections
+    let mut client = {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            match TcpStream::connect(chain_local).await {
+                Ok(stream) => break stream,
+                Err(_) if tokio::time::Instant::now() < deadline => {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                Err(e) => panic!("chain did not start accepting within 5s: {e}"),
+            }
+        }
+    };
+    client.write_all(b"hello through chain").await.unwrap();
+
+    let mut buf = [0u8; 1024];
+    let n = tokio::time::timeout(Duration::from_secs(5), client.read(&mut buf))
+        .await
+        .expect("read timed out")
+        .unwrap();
+
+    assert_eq!(&buf[..n], b"hello through chain");
+
+    // Shut down -- drop client and abort echo server
+    drop(client);
+    echo_task.abort();
+
+    // Chain plugins loop on accept() indefinitely. When the runtime is
+    // dropped (end of block_on), tasks are cancelled and kill_on_drop
+    // terminates the child processes.
+    let _ = tokio::time::timeout(Duration::from_secs(10), chain_task).await;
 }
 
 fn main() {

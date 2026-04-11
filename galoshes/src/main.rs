@@ -1,13 +1,5 @@
 #![cfg_attr(v2ray_plugin_missing, allow(dead_code, unused_imports))]
 
-mod embedded;
-mod yamux;
-
-#[cfg(test)]
-mod embedded_tests;
-#[cfg(test)]
-mod yamux_tests;
-
 use garter::{BinaryPlugin, ChainRunner, PluginEnv};
 
 #[cfg(not(v2ray_plugin_missing))]
@@ -40,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
         bytes
     };
 
-    let v2ray_binary = embedded::EmbeddedBinary {
+    let v2ray_binary = galoshes::embedded::EmbeddedBinary {
         name: "v2ray-plugin",
         data: V2RAY_BYTES,
         sha256,
@@ -48,7 +40,7 @@ async fn main() -> anyhow::Result<()> {
 
     let verified = v2ray_binary.prepare()?;
 
-    let yamux_plugin = yamux::YamuxPlugin::from_plugin_options(env.plugin_options.as_deref());
+    let yamux_plugin = galoshes::yamux::YamuxPlugin::from_plugin_options(env.plugin_options.as_deref());
 
     let v2ray_plugin = BinaryPlugin::new(verified.exec_path(), env.plugin_options.as_deref());
 

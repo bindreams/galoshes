@@ -12,7 +12,6 @@ name = "no stray #[test] attribute"
 entry = '^\s*#\[test\]'
 language = "pygrep"
 types = ["rust"]
-exclude = '(_tests\.rs|/tests/)'
 
 [[repos.hooks]]
 id = "cargo-fmt"
@@ -46,4 +45,11 @@ repo = "https://github.com/editorconfig-checker/editorconfig-checker.python"
 rev = "3.2.1"
 hooks = [
   { id = "editorconfig-checker", exclude_types = ["rust", "markdown"] },
+]
+
+[[repos]]
+repo = "https://github.com/hukkin/mdformat"
+rev = "1.0.0"
+hooks = [
+  { id = "mdformat", additional_dependencies = ["mdformat-gfm"] },
 ]
