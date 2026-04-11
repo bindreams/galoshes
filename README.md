@@ -73,4 +73,6 @@ cargo build -p galoshes
 
 ## License
 
-MIT OR Apache-2.0
+Copyright 2026, Anna Zhukova
+
+This project is licensed under the Apache 2.0 license. The license text can be found at [LICENSE.md](/LICENSE.md).
