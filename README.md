@@ -6,12 +6,12 @@ Built on **Garter**, a general-purpose library and binary for chaining arbitrary
 
 ## Crates
 
-| Crate | Type | Description |
-|-------|------|-------------|
-| `garter` | lib | Core plugin chaining library: `ChainPlugin` trait, `BinaryPlugin`, `ChainRunner` |
-| `garter-bin` | bin (`garter`) | Config-driven chainer binary — chains arbitrary SIP003u plugins via YAML |
-| `galoshes` | bin | Turnkey plugin bundling YAMUX + v2ray-plugin. Same config as v2ray-plugin, UDP works transparently |
-| `xtask` | bin | Build tooling (`cargo xtask v2ray-plugin`) |
+| Crate        | Type           | Description                                                                                        |
+| ------------ | -------------- | -------------------------------------------------------------------------------------------------- |
+| `garter`     | lib            | Core plugin chaining library: `ChainPlugin` trait, `BinaryPlugin`, `ChainRunner`                   |
+| `garter-bin` | bin (`garter`) | Config-driven chainer binary — chains arbitrary SIP003u plugins via YAML                           |
+| `galoshes`   | bin            | Turnkey plugin bundling YAMUX + v2ray-plugin. Same config as v2ray-plugin, UDP works transparently |
+| `xtask`      | bin            | Build tooling (`cargo xtask v2ray-plugin`)                                                         |
 
 ## Using Galoshes
 
