@@ -59,6 +59,11 @@ impl ChainPlugin for BinaryPlugin {
         cmd.stderr(Stdio::piped());
         cmd.kill_on_drop(true);
 
+        // On Windows, create a new process group so that graceful_stop can
+        // send CTRL_BREAK_EVENT targeted at this child's group (SIP003u).
+        #[cfg(windows)]
+        cmd.creation_flags(windows::Win32::System::Threading::CREATE_NEW_PROCESS_GROUP.0);
+
         let mut child = cmd
             .spawn()
             .map_err(|e| crate::Error::Chain(format!("failed to spawn '{}': {e}", self.path.display())))?;
@@ -129,7 +134,7 @@ impl ChainPlugin for BinaryPlugin {
             }
             _ = shutdown.cancelled() => {
                 tracing::info!(plugin = %self.name, "shutting down");
-                shutdown::graceful_kill(&mut child, drain_timeout).await?;
+                shutdown::graceful_stop(&mut child, drain_timeout).await?;
                 // Drain remaining log lines (tasks will EOF when child's pipes close)
                 let _ = tokio::time::timeout(
                     std::time::Duration::from_millis(100),

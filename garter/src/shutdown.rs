@@ -29,9 +29,9 @@ async fn wait_for_signal() {
         .expect("failed to register Ctrl+C handler");
 }
 
-/// Gracefully terminate a child process.
+/// Gracefully stop a child process.
 /// Sends a termination signal, waits up to `timeout`, then force-kills.
-pub async fn graceful_kill(child: &mut Child, timeout: Duration) -> crate::Result<()> {
+pub async fn graceful_stop(child: &mut Child, timeout: Duration) -> crate::Result<()> {
     send_term_signal(child)?;
     match tokio::time::timeout(timeout, child.wait()).await {
         Ok(Ok(_status)) => Ok(()),
@@ -61,10 +61,16 @@ fn send_term_signal(child: &Child) -> crate::Result<()> {
 
 #[cfg(windows)]
 fn send_term_signal(child: &Child) -> crate::Result<()> {
-    // On Windows, there is no direct equivalent of SIGTERM for arbitrary processes.
-    // GenerateConsoleCtrlEvent requires CREATE_NEW_PROCESS_GROUP, which will be set up
-    // in Task 6 (BinaryPlugin) when we actually spawn child processes.
-    // For now, this is a no-op — graceful_kill will fall through to the timeout+force-kill path.
-    let _ = child;
+    use windows::Win32::System::Console::{GenerateConsoleCtrlEvent, CTRL_BREAK_EVENT};
+
+    // The child MUST have been spawned with CREATE_NEW_PROCESS_GROUP so that
+    // its PID is the process group leader. GenerateConsoleCtrlEvent targets
+    // a process group, not a PID — passing the child PID only works because
+    // CREATE_NEW_PROCESS_GROUP makes the child its own group leader.
+    if let Some(pid) = child.id() {
+        unsafe { GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid) }
+            .inspect_err(|e| tracing::debug!("GenerateConsoleCtrlEvent failed: {e}"))
+            .map_err(std::io::Error::from)?;
+    }
     Ok(())
 }
