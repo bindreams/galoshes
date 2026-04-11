@@ -12,7 +12,6 @@ name = "no stray #[test] attribute"
 entry = '^\s*#\[test\]'
 language = "pygrep"
 types = ["rust"]
-exclude = '(_tests\.rs|/tests/)'
 
 [[repos.hooks]]
 id = "cargo-fmt"

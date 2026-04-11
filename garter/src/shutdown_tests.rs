@@ -4,7 +4,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::shutdown;
 
-#[tokio::test]
+#[skuld::test]
 async fn cancel_token_on_shutdown_signal() {
     let token = CancellationToken::new();
     let child_token = token.child_token();
@@ -12,7 +12,7 @@ async fn cancel_token_on_shutdown_signal() {
     assert!(child_token.is_cancelled());
 }
 
-#[tokio::test]
+#[skuld::test]
 async fn graceful_kill_terminates_child() {
     #[cfg(unix)]
     let mut child = Command::new("sleep").arg("60").spawn().unwrap();
@@ -34,7 +34,7 @@ async fn graceful_kill_terminates_child() {
     assert!(status.is_some(), "child should have exited after graceful_kill");
 }
 
-#[tokio::test]
+#[skuld::test]
 async fn graceful_kill_force_kills_after_timeout() {
     #[cfg(unix)]
     let mut child = Command::new("sh")
