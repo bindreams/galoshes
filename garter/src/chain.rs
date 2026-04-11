@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use contracts::debug_requires;
+use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
@@ -54,6 +55,8 @@ fn allocate_one_port() -> crate::Result<SocketAddr> {
 pub struct ChainRunner {
     plugins: Vec<Box<dyn ChainPlugin>>,
     drain_timeout: Duration,
+    ready_tx: Option<oneshot::Sender<SocketAddr>>,
+    external_cancel: Option<CancellationToken>,
 }
 
 impl Default for ChainRunner {
@@ -67,6 +70,8 @@ impl ChainRunner {
         Self {
             plugins: Vec::new(),
             drain_timeout: Duration::from_secs(5),
+            ready_tx: None,
+            external_cancel: None,
         }
     }
 
@@ -80,6 +85,23 @@ impl ChainRunner {
     /// Set the drain timeout for graceful shutdown.
     pub fn drain_timeout(mut self, timeout: Duration) -> Self {
         self.drain_timeout = timeout;
+        self
+    }
+
+    /// Register a oneshot that fires when the first plugin in the chain is
+    /// confirmed listening on its local address.
+    ///
+    /// If the plugin exits before becoming ready, `tx` is dropped and the
+    /// receiver gets `RecvError`.
+    pub fn on_ready(mut self, tx: oneshot::Sender<SocketAddr>) -> Self {
+        self.ready_tx = Some(tx);
+        self
+    }
+
+    /// Set an external cancellation token. When cancelled, the runner
+    /// gracefully stops all plugins (SIP003u shutdown sequence).
+    pub fn cancel_token(mut self, token: CancellationToken) -> Self {
+        self.external_cancel = Some(token);
         self
     }
 
@@ -105,6 +127,15 @@ impl ChainRunner {
         let shutdown = CancellationToken::new();
         shutdown::register_signal_handler(shutdown.clone());
 
+        // Wire external cancellation into the shared shutdown token.
+        if let Some(external) = self.external_cancel {
+            let shutdown = shutdown.clone();
+            tokio::spawn(async move {
+                external.cancelled().await;
+                shutdown.cancel();
+            });
+        }
+
         // Spawn all plugins
         let mut set = tokio::task::JoinSet::new();
         for (i, plugin) in self.plugins.into_iter().enumerate() {
@@ -117,6 +148,19 @@ impl ChainRunner {
             set.spawn(async move {
                 let result = plugin.run(local, remote, token).instrument(span).await;
                 (plugin_name, result)
+            });
+        }
+
+        // Readiness polling: probe the outermost local address until it accepts.
+        if let Some(ready_tx) = self.ready_tx {
+            let local_addr = addrs[0];
+            let shutdown = shutdown.clone();
+            tokio::spawn(async move {
+                if let Some(addr) = poll_ready(local_addr, shutdown).await {
+                    let _ = ready_tx.send(addr);
+                }
+                // If poll_ready returns None (shutdown before ready), ready_tx
+                // is dropped and the receiver gets RecvError.
             });
         }
 
@@ -160,6 +204,26 @@ impl ChainRunner {
                 set.abort_all();
                 Err(crate::Error::Chain("drain timeout expired".into()))
             }
+        }
+    }
+}
+
+/// Poll a TCP address with exponential backoff until it accepts a connection.
+/// Returns `None` if shutdown fires before the address is ready.
+async fn poll_ready(addr: SocketAddr, shutdown: CancellationToken) -> Option<SocketAddr> {
+    let mut delay = Duration::from_millis(10);
+    let max_delay = Duration::from_secs(1);
+
+    loop {
+        if tokio::net::TcpStream::connect(addr).await.is_ok() {
+            return Some(addr);
+        }
+
+        tokio::select! {
+            () = tokio::time::sleep(delay) => {
+                delay = (delay * 2).min(max_delay);
+            }
+            () = shutdown.cancelled() => return None,
         }
     }
 }
