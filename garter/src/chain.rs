@@ -42,8 +42,30 @@ fn allocate_one_port() -> crate::Result<SocketAddr> {
                 drop(l);
                 return Ok(addr);
             }
-            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
-                tracing::debug!(attempt, port = addr.port(), "port was taken, retrying");
+            // `AddrInUse` — another socket grabbed the port between drop and rebind.
+            // `PermissionDenied` — Windows `WSAEACCES`: typically a shift in the
+            // TCP dynamic excluded-port range (Hyper-V / WSL2 / Docker Desktop
+            // reservations, visible via `netsh int ipv4 show excludedportrange`),
+            // or another socket claiming the port with `SO_EXCLUSIVEADDRUSE` on a
+            // wildcard interface.
+            // `AddrNotAvailable` — same excluded-port-range class; distinct from
+            // `WSAEACCES` only in whether the kernel rejects the bind at the
+            // address-reservation layer or the permission layer.
+            // All three are transient probe-races; retry on a fresh ephemeral port.
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::AddrInUse
+                        | std::io::ErrorKind::PermissionDenied
+                        | std::io::ErrorKind::AddrNotAvailable
+                ) =>
+            {
+                tracing::debug!(
+                    attempt,
+                    port = addr.port(),
+                    kind = ?e.kind(),
+                    "port unavailable, retrying"
+                );
                 continue;
             }
             Err(e) => return Err(e.into()),

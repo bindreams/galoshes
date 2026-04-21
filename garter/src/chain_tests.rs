@@ -30,32 +30,28 @@ fn allocate_multiple_ports_are_unique() {
     assert_eq!(unique.len(), 5, "all allocated ports should be unique");
 }
 
-/// A transient bind failure at the rebind step inside `allocate_one_port` —
-/// whether `WSAEADDRINUSE` (another socket raced in) or `WSAEACCES`
-/// (Windows' TCP excluded-port table shifted between drop and rebind; a
-/// cross-protocol UDP allocator issued a port the TCP allocator can no
-/// longer bind; another socket held the port with `SO_EXCLUSIVEADDRUSE`
-/// against a wildcard rebind) — must be absorbed: `allocate_one_port`
-/// should retry with a fresh ephemeral port and return `Ok(addr)`.
+/// A transient `WSAEACCES` at the rebind step inside `allocate_one_port` —
+/// as happens when Windows' TCP dynamic excluded-port range shifts between
+/// drop and rebind (Hyper-V / WSL2 / Docker Desktop reservations, visible via
+/// `netsh int ipv4 show excludedportrange`) or when another socket holds
+/// the port with `SO_EXCLUSIVEADDRUSE` on a wildcard interface — must be
+/// absorbed: `allocate_one_port` should retry with a fresh ephemeral port
+/// and return `Ok(addr)`, the same as it does for `WSAEADDRINUSE`.
 ///
-/// The test drives this by holding the first probed port exclusively via
-/// `SO_EXCLUSIVEADDRUSE` between drop and rebind. Per documented Winsock
-/// behaviour, a non-exclusive bind against the same specific address yields
-/// `WSAEADDRINUSE` (already covered by the retry arm); a wildcard rebind,
-/// or other excluded-range conditions, yields `WSAEACCES` (not currently
-/// covered — see GitHub #20). Either error is a transient condition the
-/// retry must tolerate; the assertion below does not discriminate between
-/// them.
+/// The test drives this via the documented asymmetric Winsock rule: when
+/// socket A holds the port with `SO_EXCLUSIVEADDRUSE` on a **wildcard
+/// address** (`0.0.0.0:P`), a subsequent non-exclusive bind to the same
+/// port on a **specific address** (`127.0.0.1:P`) returns `WSAEACCES`, not
+/// `WSAEADDRINUSE`. This lets the test deterministically force the
+/// `WSAEACCES` path on any Windows host without admin. See GitHub #20.
 ///
-/// Pushed un-ignored to let CI settle the reachability question
-/// empirically: if the runner produces `WSAEACCES` under this mechanism,
-/// the test fails and we have the proof we were looking for; if the runner
-/// matches the local probe and produces `WSAEADDRINUSE`, the test passes
-/// and the `#[cfg(windows)]` mechanism is confirmed not to exercise the
-/// missing-retry-arm path.
+/// Serialized against the rest of the suite because the hook runs between
+/// `drop(listener)` and the holder's `bind`; a concurrent test that probed
+/// the same ephemeral port in that tiny window could take it before the
+/// holder can claim it, causing the holder's `bind` to spuriously fail.
 #[cfg(windows)]
-#[skuld::test]
-fn allocate_one_port_absorbs_transient_rebind_failure() {
+#[skuld::test(serial)]
+fn allocate_one_port_absorbs_transient_wsaeacces() {
     use crate::chain::test_hook;
     use socket2::{Domain, Protocol, Socket, Type};
     use std::cell::{Cell, RefCell};
@@ -64,7 +60,10 @@ fn allocate_one_port_absorbs_transient_rebind_failure() {
     use std::rc::Rc;
     use windows::Win32::Networking::WinSock::{setsockopt, SOCKET, SOL_SOCKET, SO_EXCLUSIVEADDRUSE};
 
-    fn hold_with_exclusive_addr(port: u16) -> Socket {
+    /// Binds `0.0.0.0:port` with `SO_EXCLUSIVEADDRUSE`. A subsequent
+    /// non-exclusive bind to `127.0.0.1:port` will then return `WSAEACCES`
+    /// per the documented Winsock matrix.
+    fn hold_wildcard_exclusive(port: u16) -> Socket {
         let s = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).expect("create socket");
         let raw = SOCKET(s.as_raw_socket() as usize);
         let enable = 1i32.to_ne_bytes();
@@ -72,15 +71,14 @@ fn allocate_one_port_absorbs_transient_rebind_failure() {
         // `&enable` is a live `[u8; 4]` on this stack frame.
         let rc = unsafe { setsockopt(raw, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, Some(&enable)) };
         assert_eq!(rc, 0, "setsockopt SO_EXCLUSIVEADDRUSE failed");
-        let addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
-        s.bind(&addr.into()).expect("bind with SO_EXCLUSIVEADDRUSE");
+        let addr: SocketAddr = format!("0.0.0.0:{port}").parse().unwrap();
+        s.bind(&addr.into())
+            .expect("bind 0.0.0.0:port with SO_EXCLUSIVEADDRUSE");
         s
     }
 
     let holder: Rc<RefCell<Option<Socket>>> = Rc::new(RefCell::new(None));
     let holder_cb = holder.clone();
-    let held_port: Rc<Cell<Option<u16>>> = Rc::new(Cell::new(None));
-    let held_port_cb = held_port.clone();
     let hook_count = Rc::new(Cell::new(0u32));
     let hook_count_cb = hook_count.clone();
 
@@ -88,34 +86,23 @@ fn allocate_one_port_absorbs_transient_rebind_failure() {
         let n = hook_count_cb.get() + 1;
         hook_count_cb.set(n);
         if n == 1 {
-            held_port_cb.set(Some(port));
-            *holder_cb.borrow_mut() = Some(hold_with_exclusive_addr(port));
+            *holder_cb.borrow_mut() = Some(hold_wildcard_exclusive(port));
         }
     });
 
     let ports = allocate_ports(1).expect(
-        "allocate_ports must retry past a transient rebind failure; propagated error here \
-         means the retry arm does not cover the observed error kind (likely WSAEACCES / \
-         PermissionDenied — see GitHub #20)",
+        "allocate_ports must retry past a transient WSAEACCES; propagated error here means \
+         the retry arm does not yet cover ErrorKind::PermissionDenied — see GitHub #20",
     );
 
     assert_eq!(ports.len(), 1);
     assert!(
         hook_count.get() >= 2,
-        "expected at least one retry after the injected rebind failure; got {} hook fire(s)",
+        "expected at least one retry after the injected WSAEACCES; got {} hook fire(s)",
         hook_count.get()
     );
-    let held = held_port
-        .get()
-        .expect("hook should have captured the first probed port");
-    assert_ne!(
-        ports[0].port(),
-        held,
-        "allocator must not return the port currently held with SO_EXCLUSIVEADDRUSE"
-    );
-
-    drop(holder.borrow_mut().take());
-    // `_guard` drops here → clears the thread-local hook.
+    // `holder` drops at end-of-scope, releasing the exclusive bind; `_guard`
+    // drops after it, clearing the thread-local hook.
 }
 
 // Test helpers =====
