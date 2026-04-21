@@ -30,29 +30,35 @@ fn allocate_multiple_ports_are_unique() {
     assert_eq!(unique.len(), 5, "all allocated ports should be unique");
 }
 
-/// Demonstrates that `allocate_one_port` does NOT retry on
-/// `WSAEACCES` / `ErrorKind::PermissionDenied` — only on `AddrInUse`.
-/// Tracked in GitHub #20 for a follow-up fix.
+/// A transient bind failure at the rebind step inside `allocate_one_port` —
+/// whether `WSAEADDRINUSE` (another socket raced in) or `WSAEACCES`
+/// (Windows' TCP excluded-port table shifted between drop and rebind; a
+/// cross-protocol UDP allocator issued a port the TCP allocator can no
+/// longer bind; another socket held the port with `SO_EXCLUSIVEADDRUSE`
+/// against a wildcard rebind) — must be absorbed: `allocate_one_port`
+/// should retry with a fresh ephemeral port and return `Ok(addr)`.
 ///
-/// The `test_hook` between `drop(listener)` and the rebind inside
-/// `allocate_one_port` fires once and holds the just-freed port with
-/// `SO_EXCLUSIVEADDRUSE`. The rebind then returns `WSAEACCES`, which flows
-/// out as `Error::Io(_)` unmodified.
+/// The test drives this by holding the first probed port exclusively via
+/// `SO_EXCLUSIVEADDRUSE` between drop and rebind. Per documented Winsock
+/// behaviour, a non-exclusive bind against the same specific address yields
+/// `WSAEADDRINUSE` (already covered by the retry arm); a wildcard rebind,
+/// or other excluded-range conditions, yields `WSAEACCES` (not currently
+/// covered — see GitHub #20). Either error is a transient condition the
+/// retry must tolerate; the assertion below does not discriminate between
+/// them.
 ///
-/// Single-shot: if a future fix adds `PermissionDenied` to the retry arm,
-/// the second attempt probes a FRESH ephemeral port, the hook no-ops,
-/// the rebind succeeds, and `expect_err` below panics — that unmet
-/// `expect_err` is the fix-signal.
+/// Pushed un-ignored to let CI settle the reachability question
+/// empirically: if the runner produces `WSAEACCES` under this mechanism,
+/// the test fails and we have the proof we were looking for; if the runner
+/// matches the local probe and produces `WSAEADDRINUSE`, the test passes
+/// and the `#[cfg(windows)]` mechanism is confirmed not to exercise the
+/// missing-retry-arm path.
 #[cfg(windows)]
-#[skuld::test(ignore = "demonstrates WSAEACCES reachability in allocate_one_port; see GitHub #20")]
-fn allocate_ports_surfaces_wsaeacces_on_windows() {
-    // NOTE: if MAX_PORT_RETRIES or the retry match arms in
-    // chain::allocate_one_port change, revisit the single-shot logic below.
-
+#[skuld::test]
+fn allocate_one_port_absorbs_transient_rebind_failure() {
     use crate::chain::test_hook;
     use socket2::{Domain, Protocol, Socket, Type};
     use std::cell::{Cell, RefCell};
-    use std::io::ErrorKind;
     use std::net::SocketAddr;
     use std::os::windows::io::AsRawSocket;
     use std::rc::Rc;
@@ -73,46 +79,39 @@ fn allocate_ports_surfaces_wsaeacces_on_windows() {
 
     let holder: Rc<RefCell<Option<Socket>>> = Rc::new(RefCell::new(None));
     let holder_cb = holder.clone();
-    // Mechanism-independent fix-signal: pre-fix, allocate_one_port returns
-    // immediately on the first WSAEACCES so the hook fires exactly once;
-    // post-fix (PermissionDenied added to the retry arm), the retry re-enters
-    // allocate_one_port and the hook fires again. `hook_count != 1` is a
-    // sufficient condition to flag the fix without relying on which error
-    // variant is propagated.
+    let held_port: Rc<Cell<Option<u16>>> = Rc::new(Cell::new(None));
+    let held_port_cb = held_port.clone();
     let hook_count = Rc::new(Cell::new(0u32));
     let hook_count_cb = hook_count.clone();
 
     let _guard = test_hook::set(move |port| {
-        hook_count_cb.set(hook_count_cb.get() + 1);
-        if hook_count_cb.get() == 1 {
+        let n = hook_count_cb.get() + 1;
+        hook_count_cb.set(n);
+        if n == 1 {
+            held_port_cb.set(Some(port));
             *holder_cb.borrow_mut() = Some(hold_with_exclusive_addr(port));
         }
     });
 
-    let err = allocate_ports(1).expect_err("rebind was expected to fail with WSAEACCES");
-
-    assert_eq!(
-        hook_count.get(),
-        1,
-        "hook should fire exactly once pre-fix; firing more than once means \
-         allocate_one_port retried on WSAEACCES — fix has landed, retire this test"
+    let ports = allocate_ports(1).expect(
+        "allocate_ports must retry past a transient rebind failure; propagated error here \
+         means the retry arm does not cover the observed error kind (likely WSAEACCES / \
+         PermissionDenied — see GitHub #20)",
     );
 
-    let io = match &err {
-        crate::Error::Io(e) => e,
-        other => panic!("expected Error::Io(WSAEACCES), got {other:?}"),
-    };
-    assert_eq!(
-        io.raw_os_error(),
-        Some(10013),
-        "expected WSAEACCES (10013); got raw_os_error={:?}",
-        io.raw_os_error()
+    assert_eq!(ports.len(), 1);
+    assert!(
+        hook_count.get() >= 2,
+        "expected at least one retry after the injected rebind failure; got {} hook fire(s)",
+        hook_count.get()
     );
-    assert_eq!(
-        io.kind(),
-        ErrorKind::PermissionDenied,
-        "expected stdlib to map WSAEACCES → PermissionDenied; if this changes, \
-         re-evaluate whether the existing AddrInUse retry arm now covers the bug"
+    let held = held_port
+        .get()
+        .expect("hook should have captured the first probed port");
+    assert_ne!(
+        ports[0].port(),
+        held,
+        "allocator must not return the port currently held with SO_EXCLUSIVEADDRUSE"
     );
 
     drop(holder.borrow_mut().take());
