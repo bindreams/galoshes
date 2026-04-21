@@ -33,3 +33,7 @@ windows = { version = "0.61", features = [
     "Win32_System_JobObjects",
     "Win32_System_Threading",
 ] }
+
+[target.'cfg(windows)'.dev-dependencies]
+socket2 = "0.6"
+windows = { version = "0.61", features = ["Win32_Networking_WinSock"] }
