@@ -34,6 +34,9 @@ fn allocate_one_port() -> crate::Result<SocketAddr> {
         let addr = listener.local_addr()?;
         drop(listener);
 
+        #[cfg(test)]
+        test_hook::fire(addr.port());
+
         match std::net::TcpListener::bind(addr) {
             Ok(l) => {
                 drop(l);
@@ -286,5 +289,49 @@ async fn poll_ready(addr: SocketAddr, shutdown: CancellationToken) -> Option<Soc
             }
             () = shutdown.cancelled() => return None,
         }
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod test_hook {
+    use std::cell::RefCell;
+
+    type HookFn = Box<dyn FnMut(u16)>;
+
+    thread_local! {
+        static HOOK: RefCell<Option<HookFn>> = const { RefCell::new(None) };
+    }
+
+    pub(crate) struct Guard;
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            HOOK.with(|h| *h.borrow_mut() = None);
+        }
+    }
+
+    /// Install a callback that fires between `drop(listener)` and the rebind
+    /// inside `allocate_one_port`. Only valid when the caller of
+    /// `allocate_ports` runs synchronously on the same thread that called
+    /// `set`. Do NOT use this hook with `ChainRunner::run` on a
+    /// multi-threaded tokio runtime — `allocate_ports` would then fire on a
+    /// worker thread with an empty `HOOK` and the injection is silently
+    /// skipped.
+    pub(crate) fn set<F: FnMut(u16) + 'static>(f: F) -> Guard {
+        HOOK.with(|h| {
+            assert!(
+                h.borrow().is_none(),
+                "test_hook::set called with a hook already installed"
+            );
+            *h.borrow_mut() = Some(Box::new(f));
+        });
+        Guard
+    }
+
+    pub(crate) fn fire(port: u16) {
+        HOOK.with(|h| {
+            if let Some(cb) = h.borrow_mut().as_mut() {
+                cb(port);
+            }
+        });
     }
 }

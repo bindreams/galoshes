@@ -30,6 +30,95 @@ fn allocate_multiple_ports_are_unique() {
     assert_eq!(unique.len(), 5, "all allocated ports should be unique");
 }
 
+/// Demonstrates that `allocate_one_port` does NOT retry on
+/// `WSAEACCES` / `ErrorKind::PermissionDenied` — only on `AddrInUse`.
+/// Tracked in GitHub #20 for a follow-up fix.
+///
+/// The `test_hook` between `drop(listener)` and the rebind inside
+/// `allocate_one_port` fires once and holds the just-freed port with
+/// `SO_EXCLUSIVEADDRUSE`. The rebind then returns `WSAEACCES`, which flows
+/// out as `Error::Io(_)` unmodified.
+///
+/// Single-shot: if a future fix adds `PermissionDenied` to the retry arm,
+/// the second attempt probes a FRESH ephemeral port, the hook no-ops,
+/// the rebind succeeds, and `expect_err` below panics — that unmet
+/// `expect_err` is the fix-signal.
+#[cfg(windows)]
+#[skuld::test(ignore = "demonstrates WSAEACCES reachability in allocate_one_port; see GitHub #20")]
+fn allocate_ports_surfaces_wsaeacces_on_windows() {
+    // NOTE: if MAX_PORT_RETRIES or the retry match arms in
+    // chain::allocate_one_port change, revisit the single-shot logic below.
+
+    use crate::chain::test_hook;
+    use socket2::{Domain, Protocol, Socket, Type};
+    use std::cell::{Cell, RefCell};
+    use std::io::ErrorKind;
+    use std::net::SocketAddr;
+    use std::os::windows::io::AsRawSocket;
+    use std::rc::Rc;
+    use windows::Win32::Networking::WinSock::{setsockopt, SOCKET, SOL_SOCKET, SO_EXCLUSIVEADDRUSE};
+
+    fn hold_with_exclusive_addr(port: u16) -> Socket {
+        let s = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).expect("create socket");
+        let raw = SOCKET(s.as_raw_socket() as usize);
+        let enable = 1i32.to_ne_bytes();
+        // Safety: the FFI call — `raw` is a valid SOCKET owned by `s`, and
+        // `&enable` is a live `[u8; 4]` on this stack frame.
+        let rc = unsafe { setsockopt(raw, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, Some(&enable)) };
+        assert_eq!(rc, 0, "setsockopt SO_EXCLUSIVEADDRUSE failed");
+        let addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+        s.bind(&addr.into()).expect("bind with SO_EXCLUSIVEADDRUSE");
+        s
+    }
+
+    let holder: Rc<RefCell<Option<Socket>>> = Rc::new(RefCell::new(None));
+    let holder_cb = holder.clone();
+    // Mechanism-independent fix-signal: pre-fix, allocate_one_port returns
+    // immediately on the first WSAEACCES so the hook fires exactly once;
+    // post-fix (PermissionDenied added to the retry arm), the retry re-enters
+    // allocate_one_port and the hook fires again. `hook_count != 1` is a
+    // sufficient condition to flag the fix without relying on which error
+    // variant is propagated.
+    let hook_count = Rc::new(Cell::new(0u32));
+    let hook_count_cb = hook_count.clone();
+
+    let _guard = test_hook::set(move |port| {
+        hook_count_cb.set(hook_count_cb.get() + 1);
+        if hook_count_cb.get() == 1 {
+            *holder_cb.borrow_mut() = Some(hold_with_exclusive_addr(port));
+        }
+    });
+
+    let err = allocate_ports(1).expect_err("rebind was expected to fail with WSAEACCES");
+
+    assert_eq!(
+        hook_count.get(),
+        1,
+        "hook should fire exactly once pre-fix; firing more than once means \
+         allocate_one_port retried on WSAEACCES — fix has landed, retire this test"
+    );
+
+    let io = match &err {
+        crate::Error::Io(e) => e,
+        other => panic!("expected Error::Io(WSAEACCES), got {other:?}"),
+    };
+    assert_eq!(
+        io.raw_os_error(),
+        Some(10013),
+        "expected WSAEACCES (10013); got raw_os_error={:?}",
+        io.raw_os_error()
+    );
+    assert_eq!(
+        io.kind(),
+        ErrorKind::PermissionDenied,
+        "expected stdlib to map WSAEACCES → PermissionDenied; if this changes, \
+         re-evaluate whether the existing AddrInUse retry arm now covers the bug"
+    );
+
+    drop(holder.borrow_mut().take());
+    // `_guard` drops here → clears the thread-local hook.
+}
+
 // Test helpers =====
 
 fn test_env() -> crate::sip003::PluginEnv {

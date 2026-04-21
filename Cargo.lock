@@ -374,6 +374,7 @@ dependencies = [
  "contracts",
  "libc",
  "skuld",
+ "socket2",
  "thiserror",
  "tokio",
  "tokio-util",
