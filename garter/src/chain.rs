@@ -34,7 +34,7 @@ fn allocate_one_port() -> crate::Result<SocketAddr> {
         let addr = listener.local_addr()?;
         drop(listener);
 
-        #[cfg(test)]
+        #[cfg(all(test, windows))]
         test_hook::fire(addr.port());
 
         match std::net::TcpListener::bind(addr) {
@@ -292,7 +292,7 @@ async fn poll_ready(addr: SocketAddr, shutdown: CancellationToken) -> Option<Soc
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
 pub(crate) mod test_hook {
     use std::cell::RefCell;
 
